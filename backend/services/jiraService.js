@@ -1,5 +1,5 @@
-const createFetcher = require('../utils/fetcher');
-const { debug, error, info, warn } = require('../utils/logger');
+import createFetcher from '../utils/fetcher.js';
+import { debug, error, info, warn } from '../utils/logger.js';
 
 let fetcher = null;
 let baseURL = null;

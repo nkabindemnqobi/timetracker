@@ -57,4 +57,4 @@ const debug = (message, data = null) => {
   }
 };
 
-module.exports = { log, error, warn, info, debug };
+export { log, error, warn, info, debug };

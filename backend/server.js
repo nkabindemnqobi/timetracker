@@ -1,9 +1,9 @@
-const express = require('express');
-const cors = require('cors');
-require('dotenv').config();
+import express from 'express';
+import cors from 'cors';
+import 'dotenv/config';
 
-const jiraService = require('./services/jiraService');
-const { info, debug, error, warn } = require('./utils/logger');
+import * as jiraService from './services/jiraService.js';
+import { info, debug, error, warn } from './utils/logger.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
