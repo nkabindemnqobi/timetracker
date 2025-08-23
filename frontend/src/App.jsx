@@ -14,29 +14,6 @@ export const App = () => {
   const [selectedWeek, setSelectedWeek] = useState('')
   const [credentials, setCredentials] = useState({ domain: '', email: '', apiToken: '' })
 
-  function getStartAndEndOfWeek(weekStr) {
-    const [year, week] = weekStr.split("-W").map(Number);
-
-    const simple = new Date(year, 0, 1);
-    const dayOfWeek = simple.getDay();
-
-    const ISOweekStart = new Date(simple);
-    const diff = (dayOfWeek <= 4 ? dayOfWeek - 1 : dayOfWeek - 8);
-    ISOweekStart.setDate(simple.getDate() - diff + 7 * (week - 1));
-
-    const monday = new Date(ISOweekStart);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-
-    const format = (d) =>
-        d.toISOString().slice(0, 10).replace(/-/g, "/");
-
-    return {
-      start: format(monday),
-      end: format(sunday),
-    };
-  }
-
   const getCurrentWeek = () => {
     const now = new Date()
     const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()))
@@ -62,6 +39,54 @@ export const App = () => {
 
   const onClearTimesheet = () => {
     setTimesheet([])
+  }
+
+  const onUpdateTimesheet = (typeRow, dayName, entryIndex, newValue, issueKey, summary) => {
+    console.log(`Updating timesheet: ${typeRow.type} ${dayName} entry ${entryIndex} to ${newValue}h for issue ${issueKey}`)
+    
+    setTimesheet(prevTimesheet => {
+      if (!prevTimesheet || !prevTimesheet.issues) return prevTimesheet
+      
+      // Find the issue by key and update the specific entry
+      const updatedIssues = prevTimesheet.issues.map(issue => {
+        if (issue.key === issueKey) {
+          const updatedDailyHours = { ...issue.dailyHours }
+          
+          // Find the entry that matches the type and summary
+          if (updatedDailyHours[dayName]) {
+            const dayEntries = updatedDailyHours[dayName]
+            const entryIndexToUpdate = dayEntries.findIndex(entry => 
+              entry.type === typeRow.type && entry.summary === summary
+            )
+            
+            if (entryIndexToUpdate !== -1) {
+              updatedDailyHours[dayName] = [...dayEntries]
+              updatedDailyHours[dayName][entryIndexToUpdate] = {
+                ...dayEntries[entryIndexToUpdate],
+                time: newValue
+              }
+              
+              // Recalculate total time for this issue
+              const totalTime = Object.values(updatedDailyHours).reduce((sum, entries) => {
+                return sum + entries.reduce((daySum, entry) => daySum + (entry.time || 0), 0)
+              }, 0)
+              
+              return {
+                ...issue,
+                dailyHours: updatedDailyHours,
+                timeInProgress: totalTime
+              }
+            }
+          }
+        }
+        return issue
+      })
+      
+      return {
+        ...prevTimesheet,
+        issues: updatedIssues
+      }
+    })
   }
 
   useEffect(() => {
@@ -94,7 +119,7 @@ export const App = () => {
           </StyledAppArticle>
         ) : (
           <StyledAppArticle>
-            <Timesheet timesheet={timesheet} selectedWeek={selectedWeek} onWeekChange={setSelectedWeek} onFetchTimesheet={onFetchTimesheet} onClearTimesheet={onClearTimesheet} loading={loading} credentials={credentials} />
+            <Timesheet timesheet={timesheet} selectedWeek={selectedWeek} onWeekChange={setSelectedWeek} onFetchTimesheet={onFetchTimesheet} onClearTimesheet={onClearTimesheet} onUpdateTimesheet={onUpdateTimesheet} loading={loading} credentials={credentials} />
           </StyledAppArticle>
         )}
       </StyledAppSection>

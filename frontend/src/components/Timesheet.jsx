@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Text, Modal } from '../libs/index.js'
+import { Text, Modal, Button } from '../libs/index.js'
 import { API_URLS } from '../constants/urls.js'
+import { exportToCSV } from '../utils/exportUtils.js'
+import { COLORS } from '../libs/colors.js'
 import {
   calculateWeekData,
   calculateNewWeekData,
@@ -40,15 +42,25 @@ import {
   StyledTotalCell,
   StyledTimesheetActions,
   StyledFetchButton,
+  StyledExportButton,
   StyledDetailEntry,
   StyledDetailSummary,
   StyledDetailTime,
   StyledTypeCell,
-  StyledTypeLabel
+  StyledTypeLabel,
+  StyledEditInput,
+  StyledModalEditInput,
+  StyledModalActions,
+  StyledModalActionButton
 } from './Timesheet.styles.js'
 
-export const Timesheet = ({ timesheet, selectedWeek, onWeekChange, onFetchTimesheet, onClearTimesheet, loading, credentials }) => {
+export const Timesheet = ({ timesheet, selectedWeek, onWeekChange, onFetchTimesheet, onClearTimesheet, onUpdateTimesheet, loading, credentials }) => {
   const [modalData, setModalData] = useState(null)
+  const [editingCell, setEditingCell] = useState(null)
+  const [editValue, setEditValue] = useState('')
+  const [editingEntries, setEditingEntries] = useState({})
+  const [originalEntries, setOriginalEntries] = useState({})
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [weekData, setWeekData] = useState({
     weekNumber: 34,
     startDate: '2025-08-18',
@@ -138,28 +150,223 @@ export const Timesheet = ({ timesheet, selectedWeek, onWeekChange, onFetchTimesh
     return 'Fetch from Jira'
   }
 
+  const handleExport = () => {
+    exportToCSV(transformedData, weekData)
+  }
+
   const handleCellClick = (typeRow, dayName) => {
     const { total, entries } = getCellDataByType(typeRow, dayName, typeRow.type)
     if (total === 0) return
     
+    // Store original entries for comparison
+    const originalEntriesMap = {}
+    entries.forEach((entry, idx) => {
+      originalEntriesMap[idx] = entry.time
+    })
+    setOriginalEntries(originalEntriesMap)
+    setEditingEntries({})
+    setHasUnsavedChanges(false)
+    
     setModalData({
       title: `${typeRow.type.toUpperCase()} - ${dayName} (${getDayDate(dayName, weekData.startDate)}) - ${total.toFixed(2)}h`,
+      typeRow,
+      dayName,
       entries: entries.map(entry => ({ 
         ...entry, 
         issueKey: entry.issueKey || 'Unknown'
-      }))
+      })),
+      originalTotal: total
     })
+  }
+
+  const handleCellEdit = (typeRow, dayName, currentValue) => {
+    setEditingCell({ typeRow, dayName })
+    setEditValue(currentValue > 0 ? currentValue.toFixed(2) : '')
+  }
+
+  const handleEditSave = () => {
+    if (!editingCell) return
+    
+    const { typeRow, dayName } = editingCell
+    const newValue = parseFloat(editValue) || 0
+    
+    console.log(`Updating ${typeRow.type} ${dayName} to ${newValue}h`)
+    
+    setEditingCell(null)
+    setEditValue('')
+  }
+
+  const handleEditCancel = () => {
+    setEditingCell(null)
+    setEditValue('')
+  }
+
+  const handleEditKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      handleEditSave()
+    } else if (e.key === 'Escape') {
+      handleEditCancel()
+    }
+  }
+
+  const handleEntryEdit = (entryIndex, newValue) => {
+    setEditingEntries(prev => {
+      const updated = {
+        ...prev,
+        [entryIndex]: newValue
+      }
+      
+      // Check if there are unsaved changes
+      const hasChanges = Object.keys(updated).some(idx => {
+        const editedValue = parseFloat(updated[idx]) || 0
+        const origValue = originalEntries[idx] || 0
+        return Math.abs(editedValue - origValue) > 0.01
+      })
+      
+      setHasUnsavedChanges(hasChanges)
+      
+      // Update modal title with current total
+      if (modalData && modalData.entries) {
+        const currentTotal = modalData.entries.reduce((sum, entry, idx) => {
+          const entryTime = updated[idx] !== undefined ? parseFloat(updated[idx]) || 0 : entry.time
+          return sum + entryTime
+        }, 0)
+        
+        setModalData(prev => ({
+          ...prev,
+          title: `${prev.typeRow.type.toUpperCase()} - ${prev.dayName} (${getDayDate(prev.dayName, weekData.startDate)}) - ${currentTotal.toFixed(2)}h`
+        }))
+      }
+      
+      return updated
+    })
+  }
+
+  const handleEntrySave = () => {
+    // Validate all edited entries
+    const invalidEntries = Object.keys(editingEntries).filter(entryIndex => {
+      const value = parseFloat(editingEntries[entryIndex])
+      return isNaN(value) || value < 0
+    })
+    
+    if (invalidEntries.length > 0) {
+      alert('Please enter valid time values (numbers >= 0) for all entries.')
+      return
+    }
+    
+    // Save all edited entries
+    Object.keys(editingEntries).forEach(entryIndex => {
+      const newValue = parseFloat(editingEntries[entryIndex]) || 0
+      console.log(`Updating entry ${entryIndex} to ${newValue}h`)
+      
+      if (modalData && modalData.entries && modalData.entries[entryIndex]) {
+        const updatedEntries = [...modalData.entries]
+        const updatedEntry = {
+          ...updatedEntries[entryIndex],
+          time: newValue
+        }
+        updatedEntries[entryIndex] = updatedEntry
+        
+        setModalData({
+          ...modalData,
+          entries: updatedEntries
+        })
+        
+        if (onUpdateTimesheet) {
+          const { typeRow, dayName } = modalData
+          const entry = modalData.entries[entryIndex]
+          onUpdateTimesheet(typeRow, dayName, parseInt(entryIndex), newValue, entry.issueKey, entry.summary)
+        }
+      }
+    })
+    
+    // Clear editing state
+    setEditingEntries({})
+    setOriginalEntries({})
+    setHasUnsavedChanges(false)
+  }
+
+  const handleEntryCancel = () => {
+    // Discard all changes
+    setEditingEntries({})
+    setOriginalEntries({})
+    setHasUnsavedChanges(false)
+  }
+
+  const handleEntryKeyDown = (e, entryIndex) => {
+    if (e.key === 'Enter') {
+      // Don't save on Enter anymore - let user use Save button
+      e.preventDefault()
+    } else if (e.key === 'Escape') {
+      handleEntryCancel()
+    }
+  }
+
+  const handleModalClose = () => {
+    if (hasUnsavedChanges) {
+      const shouldClose = window.confirm('You have unsaved changes. Are you sure you want to close without saving?')
+      if (!shouldClose) return
+    }
+    
+    setModalData(null)
+    setEditingEntries({})
+    setOriginalEntries({})
+    setHasUnsavedChanges(false)
   }
 
   return (
     <>
-      <Modal isOpen={!!modalData} onClose={() => setModalData(null)} title={modalData?.title}>
-        {modalData?.entries?.map((entry, idx) => (
-          <StyledDetailEntry key={idx}>
-            <StyledDetailSummary>{entry.issueKey}: {entry.summary}</StyledDetailSummary>
-            <StyledDetailTime>{entry.time.toFixed(2)}h</StyledDetailTime>
-          </StyledDetailEntry>
-        ))}
+      <Modal isOpen={!!modalData} onClose={handleModalClose} title={modalData?.title}>
+        {modalData?.entries?.map((entry, idx) => {
+          const isEditing = editingEntries.hasOwnProperty(idx)
+          const displayValue = isEditing ? editingEntries[idx] : entry.time.toFixed(2)
+          const hasChanges = editingEntries.hasOwnProperty(idx) && 
+            Math.abs(parseFloat(editingEntries[idx] || 0) - (originalEntries[idx] || 0)) > 0.01
+          
+          return (
+            <StyledDetailEntry key={idx}>
+              <StyledDetailSummary>
+                {entry.issueKey}: {entry.summary}
+                {hasChanges && <span style={{ color: COLORS.PRIMARY.BLUE, marginLeft: '8px' }}>●</span>}
+              </StyledDetailSummary>
+              {isEditing ? (
+                <StyledModalEditInput
+                  value={displayValue}
+                  onChange={(e) => handleEntryEdit(idx, e.target.value)}
+                  onKeyDown={(e) => handleEntryKeyDown(e, idx)}
+                  autoFocus
+                  placeholder="0.00"
+                />
+              ) : (
+                <StyledDetailTime 
+                  onClick={() => handleEntryEdit(idx, entry.time.toFixed(2))}
+                  title="Click to edit"
+                >
+                  {entry.time.toFixed(2)}h
+                </StyledDetailTime>
+              )}
+            </StyledDetailEntry>
+          )
+        })}
+        {hasUnsavedChanges && (
+          <>
+            <StyledDetailEntry style={{ borderTop: `1px solid ${COLORS.BORDER.LIGHT}`, paddingTop: '8px', marginTop: '8px' }}>
+              <StyledDetailSummary style={{ color: COLORS.PRIMARY.BLUE, fontWeight: '500' }}>
+                {Object.keys(editingEntries).filter(idx => 
+                  Math.abs(parseFloat(editingEntries[idx] || 0) - (originalEntries[idx] || 0)) > 0.01
+                ).length} entries modified
+              </StyledDetailSummary>
+            </StyledDetailEntry>
+            <StyledModalActions>
+              <StyledModalActionButton onClick={handleEntryCancel}>
+                Cancel
+              </StyledModalActionButton>
+              <StyledModalActionButton onClick={handleEntrySave} variant="primary">
+                Save Changes
+              </StyledModalActionButton>
+            </StyledModalActions>
+          </>
+        )}
       </Modal>
       <StyledTimesheetContainer>
         <StyledTimesheetHeader>
@@ -217,15 +424,31 @@ export const Timesheet = ({ timesheet, selectedWeek, onWeekChange, onFetchTimesh
                 <StyledTypeCell><StyledTypeLabel>{typeRow.type.toUpperCase()}</StyledTypeLabel></StyledTypeCell>
                 {daysOfWeek.map(day => {
                   const { total, entries } = getCellDataByType(typeRow, day, typeRow.type)
+                  const isEditing = editingCell && editingCell.typeRow === typeRow && editingCell.dayName === day
+                  
                   return (
                     <StyledDayCell key={day}>
-                      {total > 0 ? (
-                        <>
-                          <StyledDayHours>{total.toFixed(2)}h</StyledDayHours>
-                          <StyledDetailsButton onClick={(e) => { e.stopPropagation(); handleCellClick(typeRow, day) }} title="Click to see details">📋 Details</StyledDetailsButton>
-                        </>
+                      {isEditing ? (
+                        <StyledEditInput
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={handleEditKeyDown}
+                          onBlur={handleEditSave}
+                          autoFocus
+                          placeholder="0.00"
+                        />
                       ) : (
-                        <StyledDayHours>-</StyledDayHours>
+                        <>
+                          <StyledDayHours 
+                            onClick={() => handleCellEdit(typeRow, day, total)}
+                            title="Click to edit"
+                          >
+                            {total > 0 ? `${total.toFixed(2)}h` : '-'}
+                          </StyledDayHours>
+                          {total > 0 && (
+                            <StyledDetailsButton onClick={(e) => { e.stopPropagation(); handleCellClick(typeRow, day) }} title="Click to see details">📋 Details</StyledDetailsButton>
+                          )}
+                        </>
                       )}
                     </StyledDayCell>
                   )
@@ -248,6 +471,12 @@ export const Timesheet = ({ timesheet, selectedWeek, onWeekChange, onFetchTimesh
           >
             {getFetchButtonText()}
           </StyledFetchButton>
+          <StyledExportButton 
+            onClick={handleExport}
+            disabled={!transformedData.issues || transformedData.issues.length === 0}
+          >
+            Export CSV
+          </StyledExportButton>
         </StyledTimesheetActions>
       </StyledTimesheetContainer>
     </>

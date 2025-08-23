@@ -217,6 +217,14 @@ export const StyledDayHours = styled(StyledParagraph)`
   font-weight: 600;
   color: ${COLORS.TEXT.SECONDARY};
   margin: 0;
+  cursor: pointer;
+  padding: ${responsivePadding(2, 4)};
+  border-radius: 3px;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: ${COLORS.BACKGROUND.GRAY_100};
+  }
 `
 
 export const StyledDetailsButton = styled(StyledButton)`
@@ -272,6 +280,27 @@ export const StyledFetchButton = styled(StyledButton)`
   }
 `
 
+export const StyledExportButton = styled(StyledButton)`
+  padding: ${responsivePadding(8, 10)} ${responsivePadding(16, 20)};
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  background-color: ${COLORS.PRIMARY.GREEN};
+  color: ${COLORS.TEXT.INVERSE};
+  font-size: ${responsiveFontSize(12, 14)};
+
+  &:hover:not(:disabled) {
+    background-color: ${COLORS.PRIMARY.GREEN_DARK};
+  }
+
+  &:disabled {
+    background-color: ${COLORS.TEXT.MUTED};
+    cursor: not-allowed;
+  }
+`
+
 export const StyledDetailEntry = styled(StyledSection)`
   display: flex;
   justify-content: space-between;
@@ -301,6 +330,14 @@ export const StyledDetailTime = styled(StyledParagraph)`
   font-weight: 500;
   white-space: nowrap;
   margin: 0;
+  cursor: pointer;
+  padding: ${responsivePadding(2, 4)};
+  border-radius: 3px;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: ${COLORS.BACKGROUND.GRAY_100};
+  }
 `
 
 export const StyledTypeCell = styled(StyledEntryCell)`
@@ -320,4 +357,79 @@ export const StyledTypeLabel = styled(StyledParagraph)`
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+`
+
+export const StyledEditInput = styled.input`
+  width: 100%;
+  padding: ${responsivePadding(4, 6)};
+  border: 2px solid ${COLORS.PRIMARY.BLUE};
+  border-radius: 4px;
+  font-size: ${responsiveFontSize(12, 14)};
+  font-weight: 600;
+  text-align: center;
+  background-color: ${COLORS.NEUTRAL.WHITE};
+  color: ${COLORS.TEXT.SECONDARY};
+  outline: none;
+  transition: border-color 0.2s;
+
+  &:focus {
+    border-color: ${COLORS.PRIMARY.BLUE_DARK};
+    box-shadow: 0 0 0 2px ${COLORS.FOCUS.BLUE_LIGHT};
+  }
+
+  &::placeholder {
+    color: ${COLORS.TEXT.MUTED};
+  }
+`
+
+export const StyledModalEditInput = styled.input`
+  width: 80px;
+  padding: ${responsivePadding(2, 4)};
+  border: 2px solid ${COLORS.PRIMARY.BLUE};
+  border-radius: 4px;
+  font-size: ${responsiveFontSize(10, 11)};
+  font-weight: 500;
+  text-align: center;
+  background-color: ${COLORS.NEUTRAL.WHITE};
+  color: ${COLORS.TEXT.SECONDARY};
+  outline: none;
+  transition: border-color 0.2s;
+
+  &:focus {
+    border-color: ${COLORS.PRIMARY.BLUE_DARK};
+    box-shadow: 0 0 0 2px ${COLORS.FOCUS.BLUE_LIGHT};
+  }
+
+  &::placeholder {
+    color: ${COLORS.TEXT.MUTED};
+  }
+`
+
+export const StyledModalActions = styled(StyledSection)`
+  display: flex;
+  justify-content: flex-end;
+  gap: ${responsivePadding(8, 12)};
+  margin-top: ${responsiveMargin(16, 20)};
+  padding-top: ${responsivePadding(12, 16)};
+  border-top: 1px solid ${COLORS.BORDER.LIGHT};
+`
+
+export const StyledModalActionButton = styled(StyledButton)`
+  padding: ${responsivePadding(6, 8)} ${responsivePadding(12, 16)};
+  border: 1px solid ${COLORS.BORDER.MEDIUM};
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: ${responsiveFontSize(12, 14)};
+  background-color: ${props => props.variant === 'primary' ? COLORS.PRIMARY.BLUE : COLORS.NEUTRAL.WHITE};
+  color: ${props => props.variant === 'primary' ? COLORS.TEXT.INVERSE : COLORS.TEXT.SECONDARY};
+
+  &:hover {
+    background-color: ${props => props.variant === 'primary' ? COLORS.PRIMARY.BLUE_DARK : COLORS.BACKGROUND.GRAY_100};
+  }
+
+  &:active {
+    transform: translateY(1px);
+  }
 `
