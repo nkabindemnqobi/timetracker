@@ -1,4 +1,4 @@
-const { debug, error } = require('./logger');
+import { debug, error } from './logger.js';
 
 const createFetcher = (baseURL = '', defaultHeaders = {}) => {
   const headers = {
@@ -89,5 +89,5 @@ const createFetcher = (baseURL = '', defaultHeaders = {}) => {
   return { get, post, put, delete: del };
 };
 
-module.exports = createFetcher;
+export default createFetcher;
 
