@@ -1,7 +1,7 @@
 import createFetcher from '../utils/fetcher.js';
-import { error, info } from '../utils/logger.js';
-import { JIRA_API_ENDPOINTS } from '../constants/urls.js';
-import { getIssueTypeCode } from '../constants/issueTypes.js';
+import {error, info} from '../utils/logger.js';
+import {JIRA_API_ENDPOINTS} from '../constants/urls.js';
+import {eachDayOfInterval, format, max, min, set} from "date-fns";
 
 let fetcher = null;
 let baseURL = null;
@@ -69,9 +69,7 @@ export const getIssues = async (assignee, startDate, endDate) => {
 export const getIssueHistory = async (issueKey) => {
   try {
     const response = await fetcher.get(JIRA_API_ENDPOINTS.ISSUE_CHANGELOG(issueKey));
-    const changelog = response.values || [];
-
-    return changelog;
+    return response.values || [];
   } catch (err) {
     error(`Failed to fetch history for ${issueKey}`, err);
     throw err;
@@ -191,7 +189,7 @@ export const getTimesheetForWeek = async (assignee, weekStart, weekEnd) => {
     const allIntervals = [];
 
     for (const issue of issues) {
-      debug('Processing issue', { key: issue.key, summary: issue.fields.summary });
+      info('Processing issue', { key: issue.key, summary: issue.fields.summary });
 
       const changelog = await getIssueHistory(issue.key);
       const intervals = getInProgressIntervals(changelog);
