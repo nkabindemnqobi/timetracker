@@ -47,14 +47,4 @@ const info = (message, data = null) => {
   }
 };
 
-const debug = (message, data = null) => {
-  if (isDev) {
-    if (data) {
-      console.debug(`[DEBUG] ${message}`, data);
-    } else {
-      console.debug(`[DEBUG] ${message}`);
-    }
-  }
-};
-
-export { log, error, warn, info, debug };
+export { log, error, warn, info };
