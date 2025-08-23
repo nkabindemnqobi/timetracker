@@ -4,6 +4,7 @@ import 'dotenv/config';
 
 import * as jiraService from './services/jiraService.js';
 import { info, debug, error, warn } from './utils/logger.js';
+import {enrichResponse} from "./services/aiService.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -13,6 +14,7 @@ app.use(express.json());
 
 app.get('/api/health', (req, res) => {
   info('Health check requested');
+  enrichResponse().then(r => console.log(r));
   res.json({ status: 'OK', message: 'Time tracker backend is running' });
 });
 
@@ -91,7 +93,7 @@ app.get('/api/timesheet/:week', async (req, res) => {
     
     const timesheet = await jiraService.getTimesheetForWeek(email, startDate, endDate);
     info('Timesheet generated successfully', { 
-      itemCount: timesheet.length 
+      itemCount: timesheet.issues.length
     });
     
     res.json(timesheet);
