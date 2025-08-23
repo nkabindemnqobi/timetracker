@@ -14,6 +14,39 @@ export const App = () => {
   const [selectedWeek, setSelectedWeek] = useState('')
   const [credentials, setCredentials] = useState({ domain: '', email: '', apiToken: '' })
 
+  function getStartAndEndOfWeek(weekStr) {
+    const [year, week] = weekStr.split("-W").map(Number);
+
+    const simple = new Date(year, 0, 1);
+    const dayOfWeek = simple.getDay();
+
+    const ISOweekStart = new Date(simple);
+    const diff = (dayOfWeek <= 4 ? dayOfWeek - 1 : dayOfWeek - 8);
+    ISOweekStart.setDate(simple.getDate() - diff + 7 * (week - 1));
+
+    const monday = new Date(ISOweekStart);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const format = (d) =>
+        d.toISOString().slice(0, 10).replace(/-/g, "/");
+
+    return {
+      start: format(monday),
+      end: format(sunday),
+    };
+  }
+
+  const getCurrentWeek = () => {
+    const now = new Date()
+    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()))
+    const endOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + 6))
+    return {
+      start: startOfWeek.toISOString().split('T')[0],
+      end: endOfWeek.toISOString().split('T')[0]
+    }
+  }
+
   const onLogin = async (e) => {
     e.preventDefault()
     await handleLogin(credentials, setLoading, setIsAuthenticated, setUser)
