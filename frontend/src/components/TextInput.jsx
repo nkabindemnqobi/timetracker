@@ -1,4 +1,9 @@
-import React from 'react'
+import {
+  StyledTextInputFieldset,
+  StyledTextInputLegend,
+  StyledTextInputInput,
+  StyledTextInputParagraph
+} from './TextInput.styles.js'
 
 export const TextInput = ({ 
   label, 
@@ -10,11 +15,11 @@ export const TextInput = ({
   small = null,
   ...props 
 }) => (
-  <fieldset>
+  <StyledTextInputFieldset>
     {label && (
-      <legend>{label}</legend>
+      <StyledTextInputLegend>{label}</StyledTextInputLegend>
     )}
-    <input
+    <StyledTextInputInput
       type={type}
       value={value}
       onChange={onChange}
@@ -23,7 +28,7 @@ export const TextInput = ({
       {...props}
     />
     {small && (
-      <p>{small}</p>
+      <StyledTextInputParagraph>{small}</StyledTextInputParagraph>
     )}
-  </fieldset>
+  </StyledTextInputFieldset>
 )

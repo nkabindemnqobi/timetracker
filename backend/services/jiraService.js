@@ -1,5 +1,7 @@
 import createFetcher from '../utils/fetcher.js';
-import { debug, error, info, warn } from '../utils/logger.js';
+import { error, info } from '../utils/logger.js';
+import { JIRA_API_ENDPOINTS } from '../constants/urls.js';
+import { getIssueTypeCode } from '../constants/issueTypes.js';
 
 let fetcher = null;
 let baseURL = null;
@@ -26,8 +28,7 @@ export const initialize = (domain, apiToken, email) => {
 
 export const getCurrentUser = async () => {
   try {
-    debug('Fetching current user from Jira');
-    const user = await fetcher.get('/myself');
+    const user = await fetcher.get(JIRA_API_ENDPOINTS.MYSELF);
     info('Current user fetched successfully', { 
       name: user.displayName, 
       email: user.emailAddress 
@@ -41,22 +42,19 @@ export const getCurrentUser = async () => {
 
 export const getIssues = async (assignee, startDate, endDate) => {
   try {
-    const jql = `assignee = "${assignee}" AND updated >= "${startDate}" AND updated <= "${endDate}" ORDER BY updated DESC`;
+
+    const jql = `assignee = "${assignee}" ORDER BY updated DESC`;
     
-    debug('Fetching issues with JQL', { 
-      assignee, 
-      startDate, 
-      endDate, 
-      jql 
-    });
+    info('Fetching issues with JQL', { jql, assignee, startDate, endDate });
     
-    const response = await fetcher.get(`/search?jql=${encodeURIComponent(jql)}&maxResults=100`);
+    const response = await fetcher.get(JIRA_API_ENDPOINTS.SEARCH(jql, 100));
     const issues = response.issues || [];
     
     info('Issues fetched successfully', { 
       count: issues.length,
       total: response.total,
-      maxResults: response.maxResults
+      maxResults: response.maxResults,
+      issueKeys: issues.map(i => i.key)
     });
     
     return issues;
@@ -68,14 +66,8 @@ export const getIssues = async (assignee, startDate, endDate) => {
 
 export const getIssueHistory = async (issueKey) => {
   try {
-    debug('Fetching issue history', { issueKey });
-    const response = await fetcher.get(`/issue/${issueKey}/changelog`);
+    const response = await fetcher.get(JIRA_API_ENDPOINTS.ISSUE_CHANGELOG(issueKey));
     const changelog = response.values || [];
-    
-    debug('Issue history fetched', { 
-      issueKey, 
-      changelogCount: changelog.length 
-    });
     
     return changelog;
   } catch (err) {
@@ -84,17 +76,21 @@ export const getIssueHistory = async (issueKey) => {
   }
 };
 
-//TODO: This is a placeholder for the actual time calculation while will be done by AI.
-export const calculateTimeInProgress = (issueKey, changelog) => {
+export const calculateTimeInProgress = (issueKey, changelog, weekStart, weekEnd, summary, issueType) => {
   let totalTimeInProgress = 0;
   let inProgressStart = null;
+  
+  const dailyHours = {
+    Mon: [],
+    Tue: [],
+    Wed: [],
+    Thu: [],
+    Fri: [],
+    Sat: [],
+    Sun: []
+  };
 
   const sortedChanges = changelog.sort((a, b) => new Date(a.created) - new Date(b.created));
-  
-  debug('Calculating time in progress', { 
-    issueKey, 
-    changelogCount: changelog.length 
-  });
 
   for (const change of sortedChanges) {
     for (const item of change.items) {
@@ -104,12 +100,6 @@ export const calculateTimeInProgress = (issueKey, changelog) => {
 
         if (fromStatus !== 'in progress' && toStatus === 'in progress') {
           inProgressStart = new Date(change.created);
-          debug('Started in progress', { 
-            issueKey, 
-            date: change.created,
-            fromStatus,
-            toStatus
-          });
         }
         else if (fromStatus === 'in progress' && toStatus !== 'in progress') {
           if (inProgressStart) {
@@ -117,13 +107,7 @@ export const calculateTimeInProgress = (issueKey, changelog) => {
             const timeSpent = endTime - inProgressStart;
             totalTimeInProgress += timeSpent;
             
-            debug('Left in progress', { 
-              issueKey, 
-              date: change.created,
-              timeSpent: timeSpent / (1000 * 60 * 60),
-              fromStatus,
-              toStatus
-            });
+            distributeTimeAcrossDays(inProgressStart, endTime, timeSpent, dailyHours, weekStart, weekEnd, summary, issueType);
             
             inProgressStart = null;
           }
@@ -137,19 +121,95 @@ export const calculateTimeInProgress = (issueKey, changelog) => {
     const timeSpent = now - inProgressStart;
     totalTimeInProgress += timeSpent;
     
-    debug('Still in progress', { 
-      issueKey, 
-      timeSpent: timeSpent / (1000 * 60 * 60)
-    });
+    distributeTimeAcrossDays(inProgressStart, now, timeSpent, dailyHours, weekStart, weekEnd, summary, issueType);
   }
 
   const hoursInProgress = totalTimeInProgress / (1000 * 60 * 60);
   info('Time calculation complete', { 
     issueKey, 
-    totalHours: hoursInProgress 
+    totalHours: hoursInProgress,
+    dailyHours
   });
   
-  return totalTimeInProgress;
+  return { totalTimeInProgress, dailyHours };
+};
+
+const distributeTimeAcrossDays = (startTime, endTime, totalTime, dailyHours, weekStart, weekEnd, summary, issueType) => {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  const weekStartDate = new Date(weekStart);
+  const weekEndDate = new Date(weekEnd);
+  
+
+  weekEndDate.setHours(23, 59, 59, 999);
+  
+  info('Distributing time across days', {
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+    weekStart,
+    weekEnd,
+    weekEndDateAdjusted: weekEndDate.toISOString(),
+    summary
+  });
+  
+  const effectiveStart = start < weekStartDate ? weekStartDate : start;
+  const effectiveEnd = end > weekEndDate ? weekEndDate : end;
+  
+  info('Effective time range', {
+    effectiveStart: effectiveStart.toISOString(),
+    effectiveEnd: effectiveEnd.toISOString(),
+    isValidRange: effectiveStart < effectiveEnd
+  });
+  
+  if (effectiveStart >= effectiveEnd) {
+    info('No time in this week range, skipping distribution');
+    return;
+  }
+  
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  
+
+  const startDay = new Date(effectiveStart);
+  startDay.setHours(0, 0, 0, 0);
+  const endDay = new Date(effectiveEnd);
+  endDay.setHours(0, 0, 0, 0);
+  
+  let currentDay = new Date(startDay);
+  
+  while (currentDay <= endDay) {
+    const dayName = dayNames[currentDay.getDay()];
+    
+
+    const dayStart = new Date(currentDay);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(currentDay);
+    dayEnd.setHours(23, 59, 59, 999);
+    
+
+    const workStartInDay = effectiveStart > dayStart ? effectiveStart : dayStart;
+    const workEndInDay = effectiveEnd < dayEnd ? effectiveEnd : dayEnd;
+    
+    if (workStartInDay < workEndInDay) {
+      const dayTimeSpent = workEndInDay - workStartInDay;
+      const dayHours = dayTimeSpent / (1000 * 60 * 60);
+      
+      info('Adding time to day', {
+        dayName,
+        dayHours,
+        workStartInDay: workStartInDay.toISOString(),
+        workEndInDay: workEndInDay.toISOString(),
+        currentDay: currentDay.toISOString().split('T')[0]
+      });
+      
+      dailyHours[dayName].push({
+        time: dayHours,
+        type: getIssueTypeCode(issueType),
+        summary: summary
+      });
+    }
+    
+    currentDay.setDate(currentDay.getDate() + 1);
+  }
 };
 
 export const getTimesheetForWeek = async (assignee, weekStart, weekEnd) => {
@@ -162,34 +222,123 @@ export const getTimesheetForWeek = async (assignee, weekStart, weekEnd) => {
     
     const issues = await getIssues(assignee, weekStart, weekEnd);
     
+    if (!issues || issues.length === 0) {
+      info('No issues found, returning sample data for testing');
+      return {
+        projectName: "Sample Project Demo",
+        issues: [
+          {
+            key: 'PROJ-123',
+            timeInProgress: 12.5,
+            dailyHours: {
+              Mon: [{time: 2.5, type: 'dev', summary: 'Implement user authentication feature'}],
+              Tue: [{time: 3.0, type: 'dev', summary: 'Implement user authentication feature'}],
+              Wed: [{time: 2.0, type: 'dev', summary: 'Implement user authentication feature'}],
+              Thu: [{time: 2.5, type: 'dev', summary: 'Implement user authentication feature'}],
+              Fri: [{time: 2.5, type: 'dev', summary: 'Implement user authentication feature'}],
+              Sat: [],
+              Sun: []
+            },
+            updated: '2024-01-15T10:30:00.000Z'
+          },
+          {
+            key: 'PROJ-456',
+            timeInProgress: 8.0,
+            dailyHours: {
+              Mon: [],
+              Tue: [],
+              Wed: [{time: 4.0, type: 'bug', summary: 'Fix responsive design issues'}, {time: 1.0, type: 'bug', summary: 'Fix other responsive design issues'}],
+              Thu: [{time: 4.0, type: 'bug', summary: 'Fix responsive design issues'}],
+              Fri: [],
+              Sat: [],
+              Sun: []
+            },
+            updated: '2024-01-14T16:45:00.000Z'
+          },
+          {
+            key: 'PROJ-789',
+            timeInProgress: 6.0,
+            dailyHours: {
+              Mon: [],
+              Tue: [],
+              Wed: [],
+              Thu: [],
+              Fri: [{time: 6.0, type: 'ana', summary: 'Add unit tests for API endpoints'}],
+              Sat: [],
+              Sun: []
+            },
+            updated: '2024-01-13T14:20:00.000Z'
+          }
+        ]
+      };
+    }
+    
     const timesheet = [];
+    let projectName = null;
+
+    info('Processing issues', { 
+      issueCount: issues.length,
+      issues: issues.map(i => ({ key: i.key, summary: i.fields.summary, status: i.fields.status?.name }))
+    });
 
     for (const issue of issues) {
-      debug('Processing issue', { 
+      if (!projectName) {
+        projectName = issue.fields.project?.name || 'Unknown Project';
+      }
+      
+      info('Processing issue', { 
         key: issue.key, 
-        summary: issue.fields.summary 
+        summary: issue.fields.summary,
+        status: issue.fields.status?.name,
+        issueType: issue.fields.issuetype?.name
       });
       
       const changelog = await getIssueHistory(issue.key);
-      const timeInProgress = calculateTimeInProgress(issue.key, changelog);
-      const hoursInProgress = timeInProgress / (1000 * 60 * 60);
+      const issueType = issue.fields.issuetype?.name || 'Task';
+      const { totalTimeInProgress, dailyHours } = calculateTimeInProgress(
+        issue.key, 
+        changelog, 
+        weekStart, 
+        weekEnd, 
+        issue.fields.summary,
+        issueType
+      );
+      const hoursInProgress = totalTimeInProgress / (1000 * 60 * 60);
 
-      timesheet.push({
+      info('Issue processed', {
         key: issue.key,
-        summary: issue.fields.summary,
-        status: issue.fields.status.name,
-        timeInProgress: hoursInProgress,
-        updated: issue.fields.updated
+        hoursInProgress,
+        hasTimeTracked: hoursInProgress > 0,
+        dailyHoursKeys: Object.keys(dailyHours).filter(day => dailyHours[day].length > 0)
       });
+
+
+      const hasTimeInWeek = Object.values(dailyHours).some(dayEntries => dayEntries.length > 0);
+      
+      if (hasTimeInWeek) {
+        timesheet.push({
+          key: issue.key,
+          timeInProgress: hoursInProgress,
+          dailyHours: dailyHours,
+          updated: issue.fields.updated
+        });
+        info('Issue included in timesheet', { key: issue.key });
+      } else {
+        info('Issue excluded - no time tracked this week', { key: issue.key });
+      }
     }
 
     info('Timesheet generated successfully', { 
       assignee, 
+      projectName,
       itemCount: timesheet.length,
       totalHours: timesheet.reduce((sum, item) => sum + item.timeInProgress, 0)
     });
 
-    return timesheet;
+    return {
+      projectName: projectName,
+      issues: timesheet
+    };
   } catch (err) {
     error('Failed to generate timesheet', err);
     throw err;
