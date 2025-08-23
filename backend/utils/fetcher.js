@@ -1,12 +1,10 @@
-import { debug, error } from './logger.js';
+import { error } from './logger.js';
 
 const createFetcher = (baseURL = '', defaultHeaders = {}) => {
   const headers = {
     'Content-Type': 'application/json',
     ...defaultHeaders
   };
-  
-  debug('Fetcher initialized', { baseURL, defaultHeaders: Object.keys(defaultHeaders) });
 
   const request = async (endpoint, options = {}) => {
     const url = `${baseURL}${endpoint}`;
@@ -18,20 +16,8 @@ const createFetcher = (baseURL = '', defaultHeaders = {}) => {
       ...options
     };
 
-    debug('Making request', { 
-      url, 
-      method: config.method || 'GET',
-      headers: Object.keys(config.headers)
-    });
-
     try {
       const response = await fetch(url, config);
-      
-      debug('Response received', { 
-        status: response.status, 
-        statusText: response.statusText,
-        url: response.url
-      });
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -45,16 +31,13 @@ const createFetcher = (baseURL = '', defaultHeaders = {}) => {
       }
 
       const contentType = response.headers.get('content-type');
-      debug('Response content type', { contentType });
       
       if (contentType && contentType.includes('application/json')) {
         const data = await response.json();
-        debug('JSON response parsed successfully');
         return data;
       }
       
       const textData = await response.text();
-      debug('Text response received', { length: textData.length });
       return textData;
     } catch (err) {
       error('Fetcher request failed', err);

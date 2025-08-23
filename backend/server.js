@@ -3,8 +3,11 @@ import cors from 'cors';
 import 'dotenv/config';
 
 import * as jiraService from './services/jiraService.js';
-import { info, debug, error, warn } from './utils/logger.js';
 import {enrichResponse} from "./services/aiService.js";
+
+import { info, error } from './utils/logger.js';
+import { API_ENDPOINTS } from './constants/urls.js';
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -12,13 +15,13 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-app.get('/api/health', (req, res) => {
+app.get(API_ENDPOINTS.HEALTH, (req, res) => {
   info('Health check requested');
   enrichResponse().then(r => console.log(r));
   res.json({ status: 'OK', message: 'Time tracker backend is running' });
 });
 
-app.post('/api/auth/validate', async (req, res) => {
+app.post(API_ENDPOINTS.AUTH_VALIDATE, async (req, res) => {
   try {
     const { domain, email, apiToken } = req.body;
     
@@ -29,18 +32,11 @@ app.post('/api/auth/validate', async (req, res) => {
     });
     
     if (!domain || !email || !apiToken) {
-      warn('Missing credentials', { 
-        hasDomain: !!domain, 
-        hasEmail: !!email, 
-        hasToken: !!apiToken 
-      });
       return res.status(400).json({ error: 'Domain, email, and API token are required' });
     }
 
-    debug('Initializing Jira service', { domain });
     jiraService.initialize(domain, apiToken, email);
     
-    debug('Fetching current user');
     const user = await jiraService.getCurrentUser();
     info('User fetched successfully', { 
       name: user.displayName, 
@@ -57,10 +53,6 @@ app.post('/api/auth/validate', async (req, res) => {
         }
       });
     } else {
-      warn('Email mismatch', { 
-        provided: email, 
-        actual: user.emailAddress 
-      });
       res.status(401).json({ error: 'Email does not match authenticated user' });
     }
   } catch (err) {
@@ -69,7 +61,7 @@ app.post('/api/auth/validate', async (req, res) => {
   }
 });
 
-app.get('/api/timesheet/:week', async (req, res) => {
+app.get(API_ENDPOINTS.TIMESHEET(':week'), async (req, res) => {
   try {
     const { week } = req.params;
     const { domain, email, apiToken } = req.query;
@@ -82,14 +74,12 @@ app.get('/api/timesheet/:week', async (req, res) => {
     });
     
     if (!domain || !email || !apiToken) {
-      warn('Missing credentials for timesheet request');
       return res.status(400).json({ error: 'Domain, email, and API token are required' });
     }
 
     jiraService.initialize(domain, apiToken, email);
     
     const [startDate, endDate] = week.split('_');
-    debug('Fetching timesheet for period', { startDate, endDate });
     
     const timesheet = await jiraService.getTimesheetForWeek(email, startDate, endDate);
     info('Timesheet generated successfully', { 

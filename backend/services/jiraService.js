@@ -1,6 +1,7 @@
 import createFetcher from '../utils/fetcher.js';
-import { debug, error, info, warn } from '../utils/logger.js';
-import { eachDayOfInterval, format, startOfDay, endOfDay, max, min, set } from 'date-fns';
+import { error, info } from '../utils/logger.js';
+import { JIRA_API_ENDPOINTS } from '../constants/urls.js';
+import { getIssueTypeCode } from '../constants/issueTypes.js';
 
 let fetcher = null;
 let baseURL = null;
@@ -29,8 +30,7 @@ export const initialize = (domain, apiToken, email) => {
 
 export const getCurrentUser = async () => {
   try {
-    debug('Fetching current user from Jira');
-    const user = await fetcher.get('/myself');
+    const user = await fetcher.get(JIRA_API_ENDPOINTS.MYSELF);
     info('Current user fetched successfully', { 
       name: user.displayName, 
       email: user.emailAddress 
@@ -44,22 +44,19 @@ export const getCurrentUser = async () => {
 
 export const getIssues = async (assignee, startDate, endDate) => {
   try {
-    const jql = `assignee = "${assignee}" AND updated >= "${startDate}" AND updated <= "${endDate}" ORDER BY updated DESC`;
+
+    const jql = `assignee = "${assignee}" ORDER BY updated DESC`;
     
-    debug('Fetching issues with JQL', { 
-      assignee, 
-      startDate, 
-      endDate, 
-      jql 
-    });
+    info('Fetching issues with JQL', { jql, assignee, startDate, endDate });
     
-    const response = await fetcher.get(`/search?jql=${encodeURIComponent(jql)}&maxResults=100`);
+    const response = await fetcher.get(JIRA_API_ENDPOINTS.SEARCH(jql, 100));
     const issues = response.issues || [];
     
     info('Issues fetched successfully', { 
       count: issues.length,
       total: response.total,
-      maxResults: response.maxResults
+      maxResults: response.maxResults,
+      issueKeys: issues.map(i => i.key)
     });
     
     return issues;
@@ -71,15 +68,9 @@ export const getIssues = async (assignee, startDate, endDate) => {
 
 export const getIssueHistory = async (issueKey) => {
   try {
-    debug('Fetching issue history', { issueKey });
-    const response = await fetcher.get(`/issue/${issueKey}/changelog`);
+    const response = await fetcher.get(JIRA_API_ENDPOINTS.ISSUE_CHANGELOG(issueKey));
     const changelog = response.values || [];
-    
-    debug('Issue history fetched', { 
-      issueKey, 
-      changelogCount: changelog.length 
-    });
-    
+
     return changelog;
   } catch (err) {
     error(`Failed to fetch history for ${issueKey}`, err);
@@ -242,3 +233,5 @@ export const getTimesheetForWeek = async (assignee, weekStart, weekEnd) => {
     throw err;
   }
 };
+
+
