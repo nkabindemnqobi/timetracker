@@ -1,6 +1,7 @@
 import createFetcher from '../utils/fetcher.js';
 import {error, info} from '../utils/logger.js';
 import {JIRA_API_ENDPOINTS} from '../constants/urls.js';
+import {getIssueTypeCode} from '../constants/issueTypes.js';
 import {eachDayOfInterval, format, max, min, set} from "date-fns";
 
 let fetcher = null;
@@ -157,7 +158,7 @@ const mergeIntervals = (intervals) => {
   return merged;
 };
 
-const getDailyHoursForIntervals = (intervals, summary = 'dev') => {
+const getDailyHoursForIntervals = (intervals, summary = 'dev', issueType = 'dev') => {
   const dailyHours = { Mon: [], Tue: [], Wed: [], Thu: [], Fri: [], Sat: [], Sun: [] };
 
   for (const { start, end } of intervals) {
@@ -165,7 +166,7 @@ const getDailyHoursForIntervals = (intervals, summary = 'dev') => {
     for (const slice of daySlices) {
       dailyHours[slice.day].push({
         time: slice.time,
-        type: 'dev',
+        type: issueType,
         timeBreakDown: slice.breakdown,
         summary
       });
@@ -195,7 +196,8 @@ export const getTimesheetForWeek = async (assignee, weekStart, weekEnd) => {
       const intervals = getInProgressIntervals(changelog);
       allIntervals.push(...intervals);
 
-      const dailyHours = getDailyHoursForIntervals(intervals, issue.fields.summary);
+      const issueType = getIssueTypeCode(issue.fields.issuetype?.name);
+      const dailyHours = getDailyHoursForIntervals(intervals, issue.fields.summary, issueType);
       const totalHoursForIssue = Object.values(dailyHours).flat().reduce(
           (sum, d) => sum + d.time, 0);
 
