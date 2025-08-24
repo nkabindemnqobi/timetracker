@@ -6,6 +6,7 @@ import {
   StyledButton, 
   StyledHr, 
   StyledContainer,
+  StyledHeading,
   responsivePadding,
   responsiveFontSize,
   responsiveWidth,
@@ -432,4 +433,67 @@ export const StyledModalActionButton = styled(StyledButton)`
   &:active {
     transform: translateY(1px);
   }
+`
+
+export const StyledWeeklySummary = styled(StyledSection)`
+  background-color: ${COLORS.NEUTRAL.WHITE};
+  border: 1px solid ${COLORS.BORDER.LIGHT};
+  border-radius: 8px;
+  padding: ${responsivePadding(16, 20)};
+  margin-top: ${responsiveMargin(16, 20)};
+  box-shadow: ${COLORS.SHADOW.SMALL};
+`
+
+export const StyledSummaryHeader = styled(StyledSection)`
+  display: flex;
+  align-items: center;
+  gap: ${responsivePadding(8, 12)};
+  margin-bottom: ${responsiveMargin(12, 16)};
+  padding-bottom: ${responsivePadding(8, 12)};
+  border-bottom: 1px solid ${COLORS.BORDER.LIGHT};
+`
+
+export const StyledSummaryIcon = styled(StyledParagraph)`
+  font-size: ${responsiveFontSize(18, 24)};
+  margin: 0;
+  color: ${COLORS.PRIMARY.BLUE};
+`
+
+export const StyledSummaryTitle = styled(StyledHeading)`
+  font-size: ${responsiveFontSize(16, 20)};
+  font-weight: 600;
+  color: ${COLORS.TEXT.PRIMARY};
+  margin: 0;
+`
+
+export const StyledSummaryContent = styled(StyledParagraph)`
+  font-size: ${responsiveFontSize(14, 16)};
+  line-height: 1.6;
+  color: ${COLORS.TEXT.SECONDARY};
+  margin: 0;
+  white-space: pre-wrap;
+  
+  /* Handle basic markdown-like formatting */
+  strong, b {
+    font-weight: 600;
+    color: ${COLORS.TEXT.PRIMARY};
+  }
+  
+  em, i {
+    font-style: italic;
+  }
+  
+  /* Handle asterisks as bold markers */
+  & {
+    font-family: inherit;
+  }
+`
+
+export const StyledNoSummary = styled(StyledParagraph)`
+  font-size: ${responsiveFontSize(14, 16)};
+  color: ${COLORS.TEXT.TERTIARY};
+  font-style: italic;
+  text-align: center;
+  margin: 0;
+  padding: ${responsivePadding(20, 32)};
 `

@@ -46,6 +46,45 @@ export const getCellData = (issue, dayName) => {
   return { total, entries }
 }
 
+// Helper function to merge overlapping time intervals
+const mergeTimeIntervals = (intervals) => {
+  if (!intervals.length) return []
+  
+  // Sort intervals by start time
+  intervals.sort((a, b) => a.start.localeCompare(b.start))
+  
+  const merged = []
+  let current = { ...intervals[0] }
+  
+  for (let i = 1; i < intervals.length; i++) {
+    const next = intervals[i]
+    
+    // If current interval overlaps with next, merge them
+    if (current.end >= next.start) {
+      current.end = current.end > next.end ? current.end : next.end
+    } else {
+      merged.push(current)
+      current = { ...next }
+    }
+  }
+  
+  merged.push(current)
+  return merged
+}
+
+// Helper function to calculate hours from time string (HH:mm format)
+const timeStringToHours = (timeStr) => {
+  const [hours, minutes] = timeStr.split(':').map(Number)
+  return hours + minutes / 60
+}
+
+// Helper function to calculate hours between two time strings
+const calculateHoursBetween = (startTime, endTime) => {
+  const startHours = timeStringToHours(startTime)
+  const endHours = timeStringToHours(endTime)
+  return endHours - startHours
+}
+
 export const calculateDailyTotals = (timesheetData, daysOfWeek) => {
   if (!timesheetData || !timesheetData.issues || timesheetData.issues.length === 0) {
     return {
@@ -69,16 +108,32 @@ export const calculateDailyTotals = (timesheetData, daysOfWeek) => {
     Sun: 0.00
   }
 
-  timesheetData.issues.forEach(item => {
-    if (item.dailyHours) {
-      daysOfWeek.forEach(day => {
-        if (Array.isArray(item.dailyHours[day])) {
-          item.dailyHours[day].forEach(entry => {
-            totals[day] += entry.time || 0
-          })
-        }
-      })
-    }
+  // For each day, collect all time intervals from all issues
+  daysOfWeek.forEach(day => {
+    const allIntervals = []
+    
+    timesheetData.issues.forEach(item => {
+      if (item.dailyHours && Array.isArray(item.dailyHours[day])) {
+        item.dailyHours[day].forEach(entry => {
+          if (entry.timeBreakDown && Array.isArray(entry.timeBreakDown)) {
+            entry.timeBreakDown.forEach(breakdown => {
+              if (breakdown.start && breakdown.end) {
+                allIntervals.push({
+                  start: breakdown.start,
+                  end: breakdown.end
+                })
+              }
+            })
+          }
+        })
+      }
+    })
+    
+    // Merge overlapping intervals and calculate total hours
+    const mergedIntervals = mergeTimeIntervals(allIntervals)
+    totals[day] = mergedIntervals.reduce((sum, interval) => {
+      return sum + calculateHoursBetween(interval.start, interval.end)
+    }, 0)
   })
 
   return totals
@@ -121,7 +176,7 @@ export const calculateNewWeekData = (currentDate, direction) => {
 }
 
 export const transformTimesheetByType = (timesheetData) => {
-  if (!timesheetData || !timesheetData.issues || timesheetData.issues.length === 0) return { projectName: '', issues: [] }
+  if (!timesheetData || !timesheetData.issues || timesheetData.issues.length === 0) return { projectName: '', issues: [], summary: null }
   
   const typeGroups = {}
   const allIssueKeys = []
@@ -183,8 +238,32 @@ export const transformTimesheetByType = (timesheetData) => {
       Sun: group.Sun
     }
     
+    // Calculate total time accounting for overlaps within each type
     const totalTime = Object.values(dailyHours).reduce((sum, entries) => {
-      return sum + entries.reduce((daySum, entry) => daySum + (entry.time || 0), 0)
+      if (!entries.length) return sum
+      
+      // Collect all time intervals for this day and type
+      const allIntervals = []
+      entries.forEach(entry => {
+        if (entry.timeBreakDown && Array.isArray(entry.timeBreakDown)) {
+          entry.timeBreakDown.forEach(breakdown => {
+            if (breakdown.start && breakdown.end) {
+              allIntervals.push({
+                start: breakdown.start,
+                end: breakdown.end
+              })
+            }
+          })
+        }
+      })
+      
+      // Merge overlapping intervals and calculate total hours
+      const mergedIntervals = mergeTimeIntervals(allIntervals)
+      const dayTotal = mergedIntervals.reduce((daySum, interval) => {
+        return daySum + calculateHoursBetween(interval.start, interval.end)
+      }, 0)
+      
+      return sum + dayTotal
     }, 0)
     
     return {
@@ -199,7 +278,8 @@ export const transformTimesheetByType = (timesheetData) => {
   
   return {
     projectName: timesheetData.projectName || 'Unknown Project',
-    issues: transformed
+    issues: transformed,
+    summary: timesheetData.summary || null
   }
 }
 

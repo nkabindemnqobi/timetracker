@@ -51,7 +51,13 @@ import {
   StyledEditInput,
   StyledModalEditInput,
   StyledModalActions,
-  StyledModalActionButton
+  StyledModalActionButton,
+  StyledWeeklySummary,
+  StyledSummaryHeader,
+  StyledSummaryIcon,
+  StyledSummaryTitle,
+  StyledSummaryContent,
+  StyledNoSummary
 } from './Timesheet.styles.js'
 
 export const Timesheet = ({ timesheet, selectedWeek, onWeekChange, onFetchTimesheet, onClearTimesheet, onUpdateTimesheet, loading, credentials }) => {
@@ -70,6 +76,14 @@ export const Timesheet = ({ timesheet, selectedWeek, onWeekChange, onFetchTimesh
     Mon: 0.00, Tue: 0.00, Wed: 0.00, Thu: 0.00, Fri: 0.00, Sat: 0.00, Sun: 0.00
   })
   const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+  const formatSummaryText = (text) => {
+    if (!text) return ''
+    // Convert markdown-like formatting to HTML
+    return text
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+  }
 
   const isFutureWeek = () => {
     const today = new Date()
@@ -478,6 +492,27 @@ export const Timesheet = ({ timesheet, selectedWeek, onWeekChange, onFetchTimesh
             Export CSV
           </StyledExportButton>
         </StyledTimesheetActions>
+        
+        {/* Weekly Summary Section */}
+        {(transformedData.summary || loading || (transformedData.issues && transformedData.issues.length > 0)) && (
+          <StyledWeeklySummary>
+            <StyledSummaryHeader>
+              <StyledSummaryIcon>📊</StyledSummaryIcon>
+              <StyledSummaryTitle>Weekly Summary</StyledSummaryTitle>
+            </StyledSummaryHeader>
+            {transformedData.summary ? (
+              <StyledSummaryContent 
+                dangerouslySetInnerHTML={{ 
+                  __html: formatSummaryText(transformedData.summary) 
+                }}
+              />
+            ) : (
+              <StyledNoSummary>
+                {loading ? 'Generating summary...' : 'No summary available for this week'}
+              </StyledNoSummary>
+            )}
+          </StyledWeeklySummary>
+        )}
       </StyledTimesheetContainer>
     </>
   )
