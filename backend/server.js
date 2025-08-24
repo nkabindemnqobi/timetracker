@@ -3,8 +3,11 @@ import cors from 'cors';
 import 'dotenv/config';
 
 import * as jiraService from './services/jiraService.js';
+import {enrichResponse} from "./services/aiService.js";
+
 import { info, error } from './utils/logger.js';
 import { API_ENDPOINTS } from './constants/urls.js';
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,6 +17,7 @@ app.use(express.json());
 
 app.get(API_ENDPOINTS.HEALTH, (req, res) => {
   info('Health check requested');
+  enrichResponse().then(r => console.log(r));
   res.json({ status: 'OK', message: 'Time tracker backend is running' });
 });
 
@@ -79,7 +83,7 @@ app.get(API_ENDPOINTS.TIMESHEET(':week'), async (req, res) => {
     
     const timesheet = await jiraService.getTimesheetForWeek(email, startDate, endDate);
     info('Timesheet generated successfully', { 
-      itemCount: timesheet.length 
+      itemCount: timesheet.issues.length
     });
     
     res.json(timesheet);

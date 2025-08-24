@@ -1,10 +1,12 @@
 import createFetcher from '../utils/fetcher.js';
-import { error, info } from '../utils/logger.js';
-import { JIRA_API_ENDPOINTS } from '../constants/urls.js';
-import { getIssueTypeCode } from '../constants/issueTypes.js';
+import {error, info} from '../utils/logger.js';
+import {JIRA_API_ENDPOINTS} from '../constants/urls.js';
+import {eachDayOfInterval, format, max, min, set} from "date-fns";
 
 let fetcher = null;
 let baseURL = null;
+const WORK_START = { hours: 8, minutes: 0 };
+const WORK_END = { hours: 17, minutes: 0 };
 
 export const initialize = (domain, apiToken, email) => {
   const cleanDomain = domain.replace('.atlassian.net', '').replace('https://', '').replace('http://', '');
@@ -67,277 +69,162 @@ export const getIssues = async (assignee, startDate, endDate) => {
 export const getIssueHistory = async (issueKey) => {
   try {
     const response = await fetcher.get(JIRA_API_ENDPOINTS.ISSUE_CHANGELOG(issueKey));
-    const changelog = response.values || [];
-    
-    return changelog;
+    return response.values || [];
   } catch (err) {
     error(`Failed to fetch history for ${issueKey}`, err);
     throw err;
   }
 };
 
-export const calculateTimeInProgress = (issueKey, changelog, weekStart, weekEnd, summary, issueType) => {
-  let totalTimeInProgress = 0;
-  let inProgressStart = null;
-  
-  const dailyHours = {
-    Mon: [],
-    Tue: [],
-    Wed: [],
-    Thu: [],
-    Fri: [],
-    Sat: [],
-    Sun: []
-  };
+function splitByWorkDay(start, end) {
+  const slices = [];
+  const dayList = eachDayOfInterval({ start, end });
 
-  const sortedChanges = changelog.sort((a, b) => new Date(a.created) - new Date(b.created));
+  for (let i = 0; i < dayList.length; i++) {
+    const day = dayList[i];
 
-  for (const change of sortedChanges) {
-    for (const item of change.items) {
-      if (item.field === 'status') {
-        const fromStatus = item.fromString?.toLowerCase();
-        const toStatus = item.toString?.toLowerCase();
+    // working window for that day
+    const workStart = set(day, WORK_START);
+    const workEnd = set(day, WORK_END);
 
-        if (fromStatus !== 'in progress' && toStatus === 'in progress') {
-          inProgressStart = new Date(change.created);
-        }
-        else if (fromStatus === 'in progress' && toStatus !== 'in progress') {
-          if (inProgressStart) {
-            const endTime = new Date(change.created);
-            const timeSpent = endTime - inProgressStart;
-            totalTimeInProgress += timeSpent;
-            
-            distributeTimeAcrossDays(inProgressStart, endTime, timeSpent, dailyHours, weekStart, weekEnd, summary, issueType);
-            
-            inProgressStart = null;
+    // clamp actual times into working window
+    const dayStart = max([i === 0 ? start : workStart, workStart]);
+    const dayEnd = min([i === dayList.length - 1 ? end : workEnd, workEnd]);
+
+    if (dayEnd > dayStart) {
+      const hours = (dayEnd - dayStart) / (1000 * 60 * 60);
+
+      slices.push({
+        day: format(day, 'EEE'), // Mon, Tue, ...
+        time: hours,
+        breakdown: [{ start: format(dayStart, 'HH:mm'), end: format(dayEnd, 'HH:mm') }]
+      });
+    }
+  }
+
+  return slices;
+}
+
+const getInProgressIntervals = (changelog) => {
+  const intervals = [];
+
+  for (let i = 0; i < changelog.length; i++) {
+    const history = changelog[i];
+    const created = new Date(history.created);
+
+    for (const item of history.items) {
+      if (item.field === 'status' && item.toString === 'In Progress') {
+        const start = created;
+
+        // find when it left In Progress
+        let exitDate = null;
+        for (let j = i + 1; j < changelog.length && !exitDate; j++) {
+          const nextHistory = changelog[j];
+          for (const nextItem of nextHistory.items) {
+            if (nextItem.field === 'status') {
+              exitDate = new Date(nextHistory.created);
+              break;
+            }
           }
         }
+
+        const end = exitDate || new Date();
+        intervals.push({ start, end });
       }
     }
   }
 
-  if (inProgressStart) {
-    const now = new Date();
-    const timeSpent = now - inProgressStart;
-    totalTimeInProgress += timeSpent;
-    
-    distributeTimeAcrossDays(inProgressStart, now, timeSpent, dailyHours, weekStart, weekEnd, summary, issueType);
-  }
-
-  const hoursInProgress = totalTimeInProgress / (1000 * 60 * 60);
-  info('Time calculation complete', { 
-    issueKey, 
-    totalHours: hoursInProgress,
-    dailyHours
-  });
-  
-  return { totalTimeInProgress, dailyHours };
+  return intervals;
 };
 
-const distributeTimeAcrossDays = (startTime, endTime, totalTime, dailyHours, weekStart, weekEnd, summary, issueType) => {
-  const start = new Date(startTime);
-  const end = new Date(endTime);
-  const weekStartDate = new Date(weekStart);
-  const weekEndDate = new Date(weekEnd);
-  
+const mergeIntervals = (intervals) => {
+  if (!intervals.length) return [];
+  intervals.sort((a, b) => a.start - b.start);
 
-  weekEndDate.setHours(23, 59, 59, 999);
-  
-  info('Distributing time across days', {
-    startTime: start.toISOString(),
-    endTime: end.toISOString(),
-    weekStart,
-    weekEnd,
-    weekEndDateAdjusted: weekEndDate.toISOString(),
-    summary
-  });
-  
-  const effectiveStart = start < weekStartDate ? weekStartDate : start;
-  const effectiveEnd = end > weekEndDate ? weekEndDate : end;
-  
-  info('Effective time range', {
-    effectiveStart: effectiveStart.toISOString(),
-    effectiveEnd: effectiveEnd.toISOString(),
-    isValidRange: effectiveStart < effectiveEnd
-  });
-  
-  if (effectiveStart >= effectiveEnd) {
-    info('No time in this week range, skipping distribution');
-    return;
+  const merged = [];
+  let prev = { ...intervals[0] };
+
+  for (let i = 1; i < intervals.length; i++) {
+    const curr = intervals[i];
+    if (curr.start <= prev.end) {
+      prev.end = new Date(Math.max(prev.end, curr.end));
+    } else {
+      merged.push(prev);
+      prev = { ...curr };
+    }
   }
-  
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  
+  merged.push(prev);
+  return merged;
+};
 
-  const startDay = new Date(effectiveStart);
-  startDay.setHours(0, 0, 0, 0);
-  const endDay = new Date(effectiveEnd);
-  endDay.setHours(0, 0, 0, 0);
-  
-  let currentDay = new Date(startDay);
-  
-  while (currentDay <= endDay) {
-    const dayName = dayNames[currentDay.getDay()];
-    
+const getDailyHoursForIntervals = (intervals, summary = 'dev') => {
+  const dailyHours = { Mon: [], Tue: [], Wed: [], Thu: [], Fri: [], Sat: [], Sun: [] };
 
-    const dayStart = new Date(currentDay);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(currentDay);
-    dayEnd.setHours(23, 59, 59, 999);
-    
-
-    const workStartInDay = effectiveStart > dayStart ? effectiveStart : dayStart;
-    const workEndInDay = effectiveEnd < dayEnd ? effectiveEnd : dayEnd;
-    
-    if (workStartInDay < workEndInDay) {
-      const dayTimeSpent = workEndInDay - workStartInDay;
-      const dayHours = dayTimeSpent / (1000 * 60 * 60);
-      
-      info('Adding time to day', {
-        dayName,
-        dayHours,
-        workStartInDay: workStartInDay.toISOString(),
-        workEndInDay: workEndInDay.toISOString(),
-        currentDay: currentDay.toISOString().split('T')[0]
-      });
-      
-      dailyHours[dayName].push({
-        time: dayHours,
-        type: getIssueTypeCode(issueType),
-        summary: summary
+  for (const { start, end } of intervals) {
+    const daySlices = splitByWorkDay(start, end);
+    for (const slice of daySlices) {
+      dailyHours[slice.day].push({
+        time: slice.time,
+        type: 'dev',
+        timeBreakDown: slice.breakdown,
+        summary
       });
     }
-    
-    currentDay.setDate(currentDay.getDate() + 1);
   }
+
+  return dailyHours;
 };
 
 export const getTimesheetForWeek = async (assignee, weekStart, weekEnd) => {
   try {
-    info('Generating timesheet', { 
-      assignee, 
-      weekStart, 
-      weekEnd 
-    });
-    
-    const issues = await getIssues(assignee, weekStart, weekEnd);
-    
-    if (!issues || issues.length === 0) {
-      info('No issues found, returning sample data for testing');
-      return {
-        projectName: "Sample Project Demo",
-        issues: [
-          {
-            key: 'PROJ-123',
-            timeInProgress: 12.5,
-            dailyHours: {
-              Mon: [{time: 2.5, type: 'dev', summary: 'Implement user authentication feature'}],
-              Tue: [{time: 3.0, type: 'dev', summary: 'Implement user authentication feature'}],
-              Wed: [{time: 2.0, type: 'dev', summary: 'Implement user authentication feature'}],
-              Thu: [{time: 2.5, type: 'dev', summary: 'Implement user authentication feature'}],
-              Fri: [{time: 2.5, type: 'dev', summary: 'Implement user authentication feature'}],
-              Sat: [],
-              Sun: []
-            },
-            updated: '2024-01-15T10:30:00.000Z'
-          },
-          {
-            key: 'PROJ-456',
-            timeInProgress: 8.0,
-            dailyHours: {
-              Mon: [],
-              Tue: [],
-              Wed: [{time: 4.0, type: 'bug', summary: 'Fix responsive design issues'}, {time: 1.0, type: 'bug', summary: 'Fix other responsive design issues'}],
-              Thu: [{time: 4.0, type: 'bug', summary: 'Fix responsive design issues'}],
-              Fri: [],
-              Sat: [],
-              Sun: []
-            },
-            updated: '2024-01-14T16:45:00.000Z'
-          },
-          {
-            key: 'PROJ-789',
-            timeInProgress: 6.0,
-            dailyHours: {
-              Mon: [],
-              Tue: [],
-              Wed: [],
-              Thu: [],
-              Fri: [{time: 6.0, type: 'ana', summary: 'Add unit tests for API endpoints'}],
-              Sat: [],
-              Sun: []
-            },
-            updated: '2024-01-13T14:20:00.000Z'
-          }
-        ]
-      };
-    }
-    
-    const timesheet = [];
-    let projectName = null;
+    info('Generating timesheet', { assignee, weekStart, weekEnd });
 
-    info('Processing issues', { 
-      issueCount: issues.length,
-      issues: issues.map(i => ({ key: i.key, summary: i.fields.summary, status: i.fields.status?.name }))
-    });
+    const issues = await getIssues(assignee, weekStart, weekEnd);
+    if (!issues || issues.length === 0) {
+      return { projectName: null, issues: [], totalHours: 0 };
+    }
+
+    const projectName = issues[0].fields.project.name;
+    const timesheetIssues = [];
+    const allIntervals = [];
 
     for (const issue of issues) {
-      if (!projectName) {
-        projectName = issue.fields.project?.name || 'Unknown Project';
-      }
-      
-      info('Processing issue', { 
-        key: issue.key, 
-        summary: issue.fields.summary,
-        status: issue.fields.status?.name,
-        issueType: issue.fields.issuetype?.name
-      });
-      
+      info('Processing issue', { key: issue.key, summary: issue.fields.summary });
+
       const changelog = await getIssueHistory(issue.key);
-      const issueType = issue.fields.issuetype?.name || 'Task';
-      const { totalTimeInProgress, dailyHours } = calculateTimeInProgress(
-        issue.key, 
-        changelog, 
-        weekStart, 
-        weekEnd, 
-        issue.fields.summary,
-        issueType
-      );
-      const hoursInProgress = totalTimeInProgress / (1000 * 60 * 60);
+      const intervals = getInProgressIntervals(changelog);
+      allIntervals.push(...intervals);
 
-      info('Issue processed', {
+      const dailyHours = getDailyHoursForIntervals(intervals, issue.fields.summary);
+      const totalHoursForIssue = Object.values(dailyHours).flat().reduce(
+          (sum, d) => sum + d.time, 0);
+
+      timesheetIssues.push({
         key: issue.key,
-        hoursInProgress,
-        hasTimeTracked: hoursInProgress > 0,
-        dailyHoursKeys: Object.keys(dailyHours).filter(day => dailyHours[day].length > 0)
+        timeInProgress: totalHoursForIssue,
+        dailyHours,
+        updated: issue.fields.updated
       });
-
-
-      const hasTimeInWeek = Object.values(dailyHours).some(dayEntries => dayEntries.length > 0);
-      
-      if (hasTimeInWeek) {
-        timesheet.push({
-          key: issue.key,
-          timeInProgress: hoursInProgress,
-          dailyHours: dailyHours,
-          updated: issue.fields.updated
-        });
-        info('Issue included in timesheet', { key: issue.key });
-      } else {
-        info('Issue excluded - no time tracked this week', { key: issue.key });
-      }
     }
 
-    info('Timesheet generated successfully', { 
-      assignee, 
+    // Merge intervals across all tickets to calculate non-overlapping total hours
+    const mergedIntervals = mergeIntervals(allIntervals);
+    const totalHours = mergedIntervals.reduce((sum, interval) => {
+      const daySlices = splitByWorkDay(interval.start, interval.end);
+      return sum + daySlices.reduce((s, slice) => s + slice.time, 0);
+    }, 0);
+
+    info('Timesheet generated successfully', {
+      assignee,
       projectName,
-      itemCount: timesheet.length,
-      totalHours: timesheet.reduce((sum, item) => sum + item.timeInProgress, 0)
+      itemCount: timesheetIssues.length,
+      totalHours
     });
 
     return {
-      projectName: projectName,
-      issues: timesheet
+      projectName,
+      issues: timesheetIssues,
+      totalHours
     };
   } catch (err) {
     error('Failed to generate timesheet', err);
