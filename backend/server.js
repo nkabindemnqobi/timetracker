@@ -3,10 +3,11 @@ import cors from 'cors';
 import 'dotenv/config';
 
 import * as jiraService from './services/jiraService.js';
-import {enrichResponse} from "./services/aiService.js";
+import {getTimesheetSummary} from "./services/aiService.js";
 
 import { info, error } from './utils/logger.js';
 import { API_ENDPOINTS } from './constants/urls.js';
+import * as aiService from "./services/aiService.js";
 
 
 const app = express();
@@ -81,7 +82,7 @@ app.get(API_ENDPOINTS.TIMESHEET(':week'), async (req, res) => {
     
     const [startDate, endDate] = week.split('_');
     
-    const timesheet = await jiraService.getTimesheetForWeek(email, startDate, endDate);
+    const timesheet = await getTimesheetSummary(email, startDate, endDate);
     info('Timesheet generated successfully', { 
       itemCount: timesheet.issues.length
     });
