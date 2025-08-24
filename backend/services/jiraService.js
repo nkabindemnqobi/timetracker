@@ -158,18 +158,30 @@ const mergeIntervals = (intervals) => {
   return merged;
 };
 
-const getDailyHoursForIntervals = (intervals, summary = 'dev', issueType = 'dev') => {
+const getDailyHoursForIntervals = (intervals, summary = 'dev', issueType = 'dev', weekStart, weekEnd) => {
   const dailyHours = { Mon: [], Tue: [], Wed: [], Thu: [], Fri: [], Sat: [], Sun: [] };
 
+  // Convert week dates to Date objects for comparison
+  const weekStartDate = new Date(weekStart);
+  const weekEndDate = new Date(weekEnd);
+  weekEndDate.setHours(23, 59, 59, 999); // End of the week
+
   for (const { start, end } of intervals) {
-    const daySlices = splitByWorkDay(start, end);
-    for (const slice of daySlices) {
-      dailyHours[slice.day].push({
-        time: slice.time,
-        type: issueType,
-        timeBreakDown: slice.breakdown,
-        summary
-      });
+    // Filter intervals to only include time within the specified week
+    const intervalStart = new Date(Math.max(start, weekStartDate));
+    const intervalEnd = new Date(Math.min(end, weekEndDate));
+    
+    // Only process if there's overlap with the week
+    if (intervalStart < intervalEnd) {
+      const daySlices = splitByWorkDay(intervalStart, intervalEnd);
+      for (const slice of daySlices) {
+        dailyHours[slice.day].push({
+          time: slice.time,
+          type: issueType,
+          timeBreakDown: slice.breakdown,
+          summary
+        });
+      }
     }
   }
 
@@ -197,7 +209,7 @@ export const getTimesheetForWeek = async (assignee, weekStart, weekEnd) => {
       allIntervals.push(...intervals);
 
       const issueType = getIssueTypeCode(issue.fields.issuetype?.name);
-      const dailyHours = getDailyHoursForIntervals(intervals, issue.fields.summary, issueType);
+      const dailyHours = getDailyHoursForIntervals(intervals, issue.fields.summary, issueType, weekStart, weekEnd);
       const totalHoursForIssue = Object.values(dailyHours).flat().reduce(
           (sum, d) => sum + d.time, 0);
 
@@ -211,9 +223,23 @@ export const getTimesheetForWeek = async (assignee, weekStart, weekEnd) => {
 
     // Merge intervals across all tickets to calculate non-overlapping total hours
     const mergedIntervals = mergeIntervals(allIntervals);
+    
+    // Convert week dates to Date objects for comparison
+    const weekStartDate = new Date(weekStart);
+    const weekEndDate = new Date(weekEnd);
+    weekEndDate.setHours(23, 59, 59, 999); // End of the week
+    
     const totalHours = mergedIntervals.reduce((sum, interval) => {
-      const daySlices = splitByWorkDay(interval.start, interval.end);
-      return sum + daySlices.reduce((s, slice) => s + slice.time, 0);
+      // Filter intervals to only include time within the specified week
+      const intervalStart = new Date(Math.max(interval.start, weekStartDate));
+      const intervalEnd = new Date(Math.min(interval.end, weekEndDate));
+      
+      // Only process if there's overlap with the week
+      if (intervalStart < intervalEnd) {
+        const daySlices = splitByWorkDay(intervalStart, intervalEnd);
+        return sum + daySlices.reduce((s, slice) => s + slice.time, 0);
+      }
+      return sum;
     }, 0);
 
     info('Timesheet generated successfully', {
