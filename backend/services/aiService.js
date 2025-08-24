@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 
-const token = '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';
+const token = process.env.REACT_APP_SERVICE_TOKEN;
 const endpoint = "https://models.github.ai/inference";
 const model = "gpt-4o";
 
